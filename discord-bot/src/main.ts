@@ -2,11 +2,11 @@ const Eris = require("eris");
 const fs = require("fs");
 const wavConverter = require("wav-converter");
 const path = require("path");
-const doSTT = require('./stt').default;
+// const doSTT = require('./stt').default;
 const doTranslation = require('./translate').default;
 const { Client } = require('@elastic/elasticsearch')
 require('dotenv').config();
-
+var spawn = require('child_process').spawn;
 
 const bot = new Eris(process.env.DISCORD_BOT_TOKEN, {
     getAllUsers: true,
@@ -55,6 +55,36 @@ function stereoToMono(stereoBuffer) {
     return monoBuffer;
 }
 
+// // Define a function to transcribe audio
+// function transcribeAudio(filename, language, samplerate, channelGame) {
+//     return new Promise((resolve, reject) => {
+//         const pythonProcess = spawn('python', ['src/transcribe.py', `outputs/${filename}.wav`, language, samplerate, channelGame]);
+
+//         let transcriptionResult = '';
+
+//         // Listen for data on the stdout stream
+//         pythonProcess.stdout.on('data', function(data) {
+//             transcriptionResult += data.toString();
+//         });
+
+//         // Handle errors
+//         pythonProcess.stderr.on('data', function(data) {
+//             reject(`Error: ${data}`);
+//         });
+
+//         // Handle process exit
+//         pythonProcess.on('close', function(code) {
+//             if (code !== 0) {
+//                 reject(`Python process exited with code ${code}`);
+//             } else {
+//                 console.log('Python process completed successfully.');
+//                 resolve(transcriptionResult.trim());
+//             }
+//         });
+//     });
+// }
+
+
 //code for 48kHz audio  
 bot.on("ready", () => {
     console.log("Ready!");
@@ -77,25 +107,72 @@ bot.on("ready", () => {
                     const filename = userData.filename;
 
                     const inputFilePath = `./outputs/${filename}.pcm`;
-                    const outputFilePath = `./outputs/${filename}-mono.pcm`;
+                    // const outputFilePath = `./outputs/${filename}-mono.pcm`;
 
-                    const stereoBuffer = fs.readFileSync(inputFilePath);
+                    // const stereoBuffer = fs.readFileSync(inputFilePath);
 
-                    const monoBuffer = stereoToMono(stereoBuffer);
+                    // const monoBuffer = stereoToMono(stereoBuffer);
 
-                    fs.writeFileSync(outputFilePath, monoBuffer);
+                    // fs.writeFileSync(outputFilePath, monoBuffer);
+
+                    const pcmData_stereo = fs.readFileSync(`./outputs/${filename}.pcm`)
+
+                    const wavData_stereo = wavConverter.encodeWav(pcmData_stereo, {
+                        numChannels: 2,
+                        sampleRate: samplerate,
+                        byteRate: 16
+                    });
+                    fs.writeFileSync(`./outputs/${filename}_stereo.wav`, wavData_stereo);
+
+                    // const pcmData = fs.readFileSync(`./outputs/${filename}-mono.pcm`)
+                    // const wavData = wavConverter.encodeWav(pcmData, {
+                    //     numChannels: 1,
+                    //     sampleRate: samplerate,
+                    //     byteRate: 16
+                    // });
+    
+                    // fs.writeFileSync(`./outputs/${filename}.wav`, wavData);
+                    // console.log("write wav file");
 
                     const memberData = memberMap.get(userID);
                     ttsQueue.push({filename, text: "", name: memberData.name, language: memberData.language.split("-")[0], finish: false});
-                    doSTT(filename, memberData.language, samplerate, channelGame) //STT on mono-pcm file
-                    .then(({filename, text}) => {
+                    // doSTT(filename, memberData.language, samplerate, channelGame) //STT on mono-pcm file
+                    // .then(({filename, text}) => {
+                        // const fileIndex = ttsQueue.findIndex((item) => item.filename === filename);
+                        // ttsQueue[fileIndex].text = text;
+                        // ttsQueue[fileIndex].finish = true;
+                    // })
+
+                    // Call the transcribeAudio function
+                    // transcribeAudio(filename, memberData.language, samplerate, channelGame)
+                    // .then((text) => {
+                    //     console.log('Transcription Result:', text);
+                    //     const fileIndex = ttsQueue.findIndex((item) => item.filename === filename);
+                    //     ttsQueue[fileIndex].text = text;
+                    //     ttsQueue[fileIndex].finish = true;
+                    // })
+                    // .catch((error) => {
+                    //     console.error(error);
+                    // });
+
+                    //2. spawn을 통해 "python 파이썬파일.py" 명령어 실행
+                    const result = spawn('python', ['src/transcribe.py', `outputs/${filename}_stereo.wav`]);
+                    result.stdout.on('data', function(data) {
+                        console.log(data.toString());
                         const fileIndex = ttsQueue.findIndex((item) => item.filename === filename);
-                        ttsQueue[fileIndex].text = text;
+                        ttsQueue[fileIndex].text = data.toString();
                         ttsQueue[fileIndex].finish = true;
+                        console.log('translate call')
                     })
 
+                    console.log('DONE');
+                    // Handle errors
+                    result.stderr.on('data', function(data) {
+                        console.error(`Error: ${data}`);
+                    });
                     userVoiceDataMap.delete(userID);
                     fs.unlink(`./outputs/${filename}.pcm`, () => {});
+                    console.log('HI DONE');
                     // fs.unlink(`./outputs/    ${filename}-mono.pcm`, () => {});
                 }
             });
